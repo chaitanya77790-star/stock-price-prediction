@@ -22,8 +22,8 @@ st.write("Predict next-day stock closing price using Machine Learning")
 # ---------------------------------------------------------------------
 MODEL_FILES = {
     "linear": "stock_linear_model.pkl",
-    "poly_model": "stock_poly_model.pkl",
-    "poly_features": "stock_poly_features.pkl",
+    "poly_model": "stock_polynomial_model.pkl",
+    "poly_features": "stock_polynomial_features.pkl",
 }
 
 missing = [name for name, path in MODEL_FILES.items() if not os.path.exists(path)]
