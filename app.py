@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-import yfinance as yf
 
 # ---------------------------------------------------------------------
 # Page configuration
@@ -299,6 +298,27 @@ linear = joblib.load(MODEL_FILES["linear"])
 poly_model = joblib.load(MODEL_FILES["poly_model"])
 poly = joblib.load(MODEL_FILES["poly_features"])
 
+# ---------------------------------------------------------------------
+# Load local dataset (same data the models were trained on)
+# ---------------------------------------------------------------------
+DATASET_CANDIDATES = ["sample_multi_stock_data_5yr.csv", "sample_multi_stock_data.csv"]
+DATASET_PATH = next((p for p in DATASET_CANDIDATES if os.path.exists(p)), None)
+
+if DATASET_PATH is None:
+    st.error(
+        f"No dataset found. Expected one of: {', '.join(DATASET_CANDIDATES)} "
+        "in the same folder as app.py."
+    )
+    st.stop()
+
+@st.cache_data
+def load_dataset(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path, parse_dates=["Date"])
+    return df.sort_values(["Ticker", "Date"]).reset_index(drop=True)
+
+dataset = load_dataset(DATASET_PATH)
+AVAILABLE_TICKERS = sorted(dataset["Ticker"].unique().tolist())
+
 # Must match FEATURE_ORDER used in train_stock_models.py
 FEATURE_ORDER = [
     "MA5", "MA10", "MA20", "Volatility5", "RSI",
@@ -317,20 +337,16 @@ with st.sidebar:
         ("Linear Regression", "Polynomial Regression")
     )
 
-    ticker = st.selectbox(
-        "Ticker Symbol",
-        ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
-    )
-    period = st.selectbox("History Period", ["6mo", "1y", "2y", "5y"], index=2)
+    ticker = st.selectbox("Ticker Symbol", AVAILABLE_TICKERS)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    fetch_clicked = st.button("🔮  Fetch & Predict")
+    fetch_clicked = st.button("🔮  Predict from Dataset")
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="section-label">ABOUT</div>', unsafe_allow_html=True)
     st.caption(
-        "Features engineered: 5/10/20-day moving averages, 5-day volatility, "
-        "14-day RSI, and lagged closing prices."
+        f"Predicting from your own dataset ({DATASET_PATH}) — the same data "
+        "the models were trained on. No live internet fetch involved."
     )
 
 # ---------------------------------------------------------------------
@@ -356,34 +372,34 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     return d.dropna()
 
 
-@st.cache_data(ttl=3600)
-def load_ticker_data(ticker: str, period: str) -> pd.DataFrame:
-    df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    return df
+def get_ticker_history(ticker: str) -> pd.DataFrame:
+    """Pull one ticker's OHLCV history from the local dataset, sorted by date."""
+    df = dataset[dataset["Ticker"] == ticker].copy()
+    df = df.sort_values("Date").reset_index(drop=True)
+    df = df.set_index("Date")
+    return df[["Open", "High", "Low", "Close", "Volume"]]
 
 
 # ---------------------------------------------------------------------
 # Main content
 # ---------------------------------------------------------------------
 if fetch_clicked or "raw_data" in st.session_state:
-    with st.spinner(f"Fetching data for {ticker}..."):
+    with st.spinner(f"Loading {ticker} history from dataset..."):
         try:
-            raw = load_ticker_data(ticker, period)
+            raw = get_ticker_history(ticker)
             if raw.empty:
-                st.error(f"No data found for ticker '{ticker}'. Check the symbol and try again.")
+                st.error(f"No data found for ticker '{ticker}' in {DATASET_PATH}.")
                 st.stop()
             st.session_state["raw_data"] = raw
         except Exception as e:
-            st.error(f"Failed to fetch data: {e}")
+            st.error(f"Failed to load dataset: {e}")
             st.stop()
 
     raw = st.session_state["raw_data"]
     feat = build_features(raw)
 
     if feat.empty:
-        st.error("Not enough historical data to compute features. Try a longer period.")
+        st.error("Not enough historical data for this ticker to compute features.")
         st.stop()
 
     latest = feat[FEATURE_ORDER].iloc[[-1]]
@@ -413,8 +429,11 @@ if fetch_clicked or "raw_data" in st.session_state:
     col1, col2 = st.columns([2, 1], gap="large")
 
     with col1:
-        st.markdown(f'<div class="section-label">{ticker} · PRICE HISTORY (120D)</div>', unsafe_allow_html=True)
-        st.line_chart(raw["Close"].tail(120), height=320)
+        show_full_range = st.checkbox("Show full dataset history (instead of last 120 days)", value=False)
+        chart_data = raw["Close"] if show_full_range else raw["Close"].tail(120)
+        range_label = "FULL HISTORY" if show_full_range else "120D"
+        st.markdown(f'<div class="section-label">{ticker} · PRICE HISTORY ({range_label})</div>', unsafe_allow_html=True)
+        st.line_chart(chart_data, height=320)
 
         # Snapshot row
         c1, c2, c3 = st.columns(3)
