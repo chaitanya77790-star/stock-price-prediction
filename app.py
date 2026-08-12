@@ -319,10 +319,10 @@ def load_dataset(path: str) -> pd.DataFrame:
 dataset = load_dataset(DATASET_PATH)
 AVAILABLE_TICKERS = sorted(dataset["Ticker"].unique().tolist())
 
-# Must match FEATURE_ORDER used in train_stock_models.py
+# Must match FEATURE_ORDER used in train_stock_models_WITH_DATASET.py
 FEATURE_ORDER = [
-    "MA5", "MA10", "MA20", "Volatility5", "RSI",
-    "Lag1", "Lag2", "Lag3", "Lag5", "Volume",
+    "MA5", "MA10", "MA20", "MA50", "MA200", "Volatility5", "RSI",
+    "Lag1", "Lag2", "Lag3", "Lag5", "Lag20", "Volume",
 ]
 
 # ---------------------------------------------------------------------
@@ -364,6 +364,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     d["MA5"] = d["Close"].rolling(5).mean()
     d["MA10"] = d["Close"].rolling(10).mean()
     d["MA20"] = d["Close"].rolling(20).mean()
+    d["MA50"] = d["Close"].rolling(50).mean()
+    d["MA200"] = d["Close"].rolling(200).mean()
     d["Volatility5"] = d["Return"].rolling(5).std()
 
     delta = d["Close"].diff()
@@ -372,7 +374,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     rs = gain / loss
     d["RSI"] = 100 - (100 / (1 + rs))
 
-    for lag in [1, 2, 3, 5]:
+    for lag in [1, 2, 3, 5, 20]:
         d[f"Lag{lag}"] = d["Close"].shift(lag)
 
     return d.dropna()
@@ -395,9 +397,9 @@ PERIOD_DAYS = {
     "All": None,
 }
 
-# Minimum trading days needed before rolling features (MA20, RSI-14) stop
-# producing NaNs — anything shorter than this will yield no usable rows.
-MIN_ROWS_FOR_FEATURES = 21
+# Minimum trading days needed before rolling features (MA200 is now the
+# longest window) stop producing NaNs — anything shorter yields no usable rows.
+MIN_ROWS_FOR_FEATURES = 205
 
 
 def trim_by_period(df: pd.DataFrame, period: str) -> pd.DataFrame:

@@ -432,15 +432,19 @@ def run_eda(df):
 
 def build_features(df):
     """
-    Engineer 10 technical indicator features from OHLCV data.
+    Engineer 13 technical indicator features from OHLCV data.
     
     Features created:
-    1-3:   MA5, MA10, MA20 (moving averages)
-    4:     Volatility5 (5-day rolling std of returns)
-    5:     RSI (14-day Relative Strength Index)
-    6-9:   Lag1, Lag2, Lag3, Lag5 (lagged closes)
-    10:    Volume
+    1-5:   MA5, MA10, MA20, MA50, MA200 (moving averages — short to long-term trend)
+    6:     Volatility5 (5-day rolling std of returns)
+    7:     RSI (14-day Relative Strength Index)
+    8-13:  Lag1, Lag2, Lag3, Lag5, Lag20, Volume
     Target: Next day's closing price
+    
+    NOTE: MA200 requires at least 200 prior trading days of history per
+    ticker (~10 months), so this needs a multi-year dataset — a short
+    dataset (a few hundred rows) will leave few or zero usable rows
+    after dropna().
     """
     print(f"\n{'='*70}")
     print(f"[5] FEATURE ENGINEERING")
@@ -450,11 +454,13 @@ def build_features(df):
     
     print("\nCreating features...")
     
-    # Moving averages
+    # Moving averages — short-term to long-term trend signal
     d["MA5"] = d["Close"].rolling(5).mean()
     d["MA10"] = d["Close"].rolling(10).mean()
     d["MA20"] = d["Close"].rolling(20).mean()
-    print("✓ Moving averages (MA5, MA10, MA20)")
+    d["MA50"] = d["Close"].rolling(50).mean()
+    d["MA200"] = d["Close"].rolling(200).mean()
+    print("✓ Moving averages (MA5, MA10, MA20, MA50, MA200)")
     
     # Volatility
     d["Return"] = d["Close"].pct_change()
@@ -469,10 +475,10 @@ def build_features(df):
     d["RSI"] = 100 - (100 / (1 + rs))
     print("✓ RSI (14-day Relative Strength Index)")
     
-    # Lagged closes
-    for lag in [1, 2, 3, 5]:
+    # Lagged closes — short-term (1-5 days) plus a longer ~1-month lag
+    for lag in [1, 2, 3, 5, 20]:
         d[f"Lag{lag}"] = d["Close"].shift(lag)
-    print("✓ Lagged closes (Lag1, Lag2, Lag3, Lag5)")
+    print("✓ Lagged closes (Lag1, Lag2, Lag3, Lag5, Lag20)")
     
     # Target (next day's close)
     d["Target"] = d["Close"].shift(-1)
@@ -484,7 +490,7 @@ def build_features(df):
     after = len(d)
     
     print(f"\nFeature Matrix:")
-    print(f"  Total features: 10")
+    print(f"  Total features: 13")
     print(f"  Rows with NaN removed: {before - after}")
     print(f"  Final rows ready for modeling: {after}")
     print(f"Status: ✓ FEATURES READY")
@@ -511,8 +517,8 @@ def train_and_evaluate(feat):
     print(f"{'='*70}")
     
     FEATURE_ORDER = [
-        "MA5", "MA10", "MA20", "Volatility5", "RSI",
-        "Lag1", "Lag2", "Lag3", "Lag5", "Volume",
+        "MA5", "MA10", "MA20", "MA50", "MA200", "Volatility5", "RSI",
+        "Lag1", "Lag2", "Lag3", "Lag5", "Lag20", "Volume",
     ]
     
     X = feat[FEATURE_ORDER]
@@ -540,7 +546,7 @@ def train_and_evaluate(feat):
     linear_rmse = mean_squared_error(y_test, linear_preds) ** 0.5
     linear_r2 = r2_score(y_test, linear_preds)
     
-    print(f"Equation: y = w₁·x₁ + w₂·x₂ + ... + w₁₀·x₁₀ + b")
+    print(f"Equation: y = w₁·x₁ + w₂·x₂ + ... + w₁₃·x₁₃ + b")
     print(f"\nResults (on test set):")
     print(f"  MAE (Mean Absolute Error):  ${linear_mae:>8.2f}")
     print(f"  RMSE (Root Mean Sq Error):  ${linear_rmse:>8.2f}")
@@ -563,8 +569,9 @@ def train_and_evaluate(feat):
     poly_rmse = mean_squared_error(y_test, poly_preds) ** 0.5
     poly_r2 = r2_score(y_test, poly_preds)
     
+    n_poly_terms = X_train_poly.shape[1]
     print(f"Equation: y = w₁·x₁ + w₂·x₁² + w₃·x₁·x₂ + ... + b")
-    print(f"Features expanded: 10 → 65 polynomial terms")
+    print(f"Features expanded: {X_train.shape[1]} → {n_poly_terms} polynomial terms")
     print(f"\nResults (on test set):")
     print(f"  MAE (Mean Absolute Error):  ${poly_mae:>8.2f}")
     print(f"  RMSE (Root Mean Sq Error):  ${poly_rmse:>8.2f}")
