@@ -339,6 +339,12 @@ with st.sidebar:
 
     ticker = st.selectbox("Ticker Symbol", AVAILABLE_TICKERS)
 
+    period = st.selectbox(
+        "History Period",
+        ["3mo", "6mo", "1y", "2y", "5y", "All"],
+        index=4  # defaults to 5y
+    )
+
     st.markdown("<br>", unsafe_allow_html=True)
     fetch_clicked = st.button("🔮  Predict from Dataset")
 
@@ -380,15 +386,46 @@ def get_ticker_history(ticker: str) -> pd.DataFrame:
     return df[["Open", "High", "Low", "Close", "Volume"]]
 
 
+PERIOD_DAYS = {
+    "3mo": 91,
+    "6mo": 182,
+    "1y": 365,
+    "2y": 730,
+    "5y": 1825,
+    "All": None,
+}
+
+# Minimum trading days needed before rolling features (MA20, RSI-14) stop
+# producing NaNs — anything shorter than this will yield no usable rows.
+MIN_ROWS_FOR_FEATURES = 21
+
+
+def trim_by_period(df: pd.DataFrame, period: str) -> pd.DataFrame:
+    """Slice a ticker's history down to the selected lookback window."""
+    days = PERIOD_DAYS.get(period)
+    if days is None or df.empty:
+        return df
+    cutoff = df.index.max() - pd.Timedelta(days=days)
+    return df[df.index >= cutoff]
+
+
 # ---------------------------------------------------------------------
 # Main content
 # ---------------------------------------------------------------------
 if fetch_clicked or "raw_data" in st.session_state:
     with st.spinner(f"Loading {ticker} history from dataset..."):
         try:
-            raw = get_ticker_history(ticker)
-            if raw.empty:
+            full_history = get_ticker_history(ticker)
+            if full_history.empty:
                 st.error(f"No data found for ticker '{ticker}' in {DATASET_PATH}.")
+                st.stop()
+            raw = trim_by_period(full_history, period)
+            if len(raw) < MIN_ROWS_FOR_FEATURES:
+                st.error(
+                    f"'{period}' only has {len(raw)} trading day(s) for {ticker} — "
+                    f"not enough to compute rolling features (need at least "
+                    f"{MIN_ROWS_FOR_FEATURES}). Try a longer period."
+                )
                 st.stop()
             st.session_state["raw_data"] = raw
         except Exception as e:
@@ -429,11 +466,8 @@ if fetch_clicked or "raw_data" in st.session_state:
     col1, col2 = st.columns([2, 1], gap="large")
 
     with col1:
-        show_full_range = st.checkbox("Show full dataset history (instead of last 120 days)", value=False)
-        chart_data = raw["Close"] if show_full_range else raw["Close"].tail(120)
-        range_label = "FULL HISTORY" if show_full_range else "120D"
-        st.markdown(f'<div class="section-label">{ticker} · PRICE HISTORY ({range_label})</div>', unsafe_allow_html=True)
-        st.line_chart(chart_data, height=320)
+        st.markdown(f'<div class="section-label">{ticker} · PRICE HISTORY ({period.upper()})</div>', unsafe_allow_html=True)
+        st.line_chart(raw["Close"], height=320)
 
         # Snapshot row
         c1, c2, c3 = st.columns(3)
