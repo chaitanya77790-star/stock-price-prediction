@@ -317,7 +317,10 @@ with st.sidebar:
         ("Linear Regression", "Polynomial Regression")
     )
 
-    ticker = st.text_input("Ticker Symbol", "AAPL").upper().strip()
+    ticker = st.selectbox(
+        "Ticker Symbol",
+        ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+    )
     period = st.selectbox("History Period", ["6mo", "1y", "2y", "5y"], index=2)
 
     st.markdown("<br>", unsafe_allow_html=True)
