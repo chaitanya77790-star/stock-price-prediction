@@ -326,7 +326,7 @@ with st.sidebar:
 
     period = st.selectbox(
         "History Period",
-        ["3mo", "6mo", "1y", "2y", "5y", "All"],
+        ["3mo", "6mo", "1y", "2y", "5y"],
         index=4  # defaults to 5y
     )
 
@@ -418,7 +418,6 @@ PERIOD_DAYS = {
     "1y": 365,
     "2y": 730,
     "5y": 1825,
-    "All": None,
 }
 
 
